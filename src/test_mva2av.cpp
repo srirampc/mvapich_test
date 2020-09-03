@@ -3,22 +3,20 @@
 #include <vector>
 #include <limits>
 #include <iostream>
-#include <algorithm>
 #include <cassert>
 #include <mpi.h>
-
-#ifdef USE_MXX
-#include "mxx/comm.hpp"
-#include "mxx/collective.hpp"
-#include "mxx/distribution.hpp"
-#endif
 
 void myMPIErrorHandler(MPI_Comm*, int* ...) {
   // throw exception, enables gdb stack trace analysis
   throw std::runtime_error("MPI Error");
 }
 
+
 #ifdef USE_MXX
+#include "mxx/comm.hpp"
+#include "mxx/collective.hpp"
+#include "mxx/distribution.hpp"
+
 int mxx_test(int argc, char** argv, 
              std::vector<size_t>& msgSizes,
              std::vector<size_t>& outSizes){
@@ -134,31 +132,17 @@ std::vector<index_t> get_displacements(const std::vector<index_t>& counts)
 
 
 int mva2av_test(int argc, char** argv,
-                std::vector<size_t>& msgSizes,
-                std::vector<size_t>& outSizes){
-    MPI_Init(&argc, &argv);
-
-    MPI_Comm comm = MPI_COMM_WORLD;
-    MPI_Errhandler handler;
-    MPI_Errhandler_create(&myMPIErrorHandler, &handler);
-    MPI_Errhandler_set(comm, handler);
-
-    // Get the number of processes
-    int rank, size;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    std::vector<TestType> msg(msgSizes.at(rank));
-    std::vector<TestType> out(outSizes.at(rank));
+                MPI_Comm comm, int rank, int size,
+                size_t msgSize, size_t outSize) {
+    std::vector<TestType> msg(msgSize);
+    std::vector<TestType> out(outSize);
 
     // get local and global size
     int local_size = (int)msg.size();
     int total_size = 0;
     MPI_Allreduce(&local_size, &total_size, 1, MPI_INT, MPI_SUM, comm);
     if (rank == 0){
-        std::cout << "Total Size : " << total_size 
-                  << std::accumulate(msgSizes.begin(), msgSizes.end(), 0)
-                  << std::endl;
+        std::cout << "Total Size : " << total_size << std::endl;
     }
 
     // get prefix sum of size and total size
@@ -191,28 +175,51 @@ int mva2av_test(int argc, char** argv,
     std::vector<int> send_displs = get_displacements(send_counts);
     std::vector<int> recv_displs = get_displacements(recv_counts);
 
+    if (rank == 0){
+       std::cout << "Start All2All" << std::endl;
+    }
     MPI_Datatype pair_dt = pair_mpi_datatype();
-    MPI_Alltoallv(const_cast<TestType*>(&msg[0]),
+    int rx = MPI_Alltoallv(const_cast<TestType*>(&msg[0]),
                   &send_counts[0], &send_displs[0], pair_dt,
                   &out[0], &recv_counts[0], &recv_displs[0], pair_dt, comm);
 
-    return MPI_Finalize();
+    if (rank == 0){
+       std::cout << "Finish All2All w. R code : " << rx << std::endl;
+    }
+    return rx;
 }
 
 int main(int argc, char** argv) {
 
-  std::vector<size_t> msgSizes{ 62810, 92785, 101355, 102780, 62810, 57100, 68520, 51390,
+    std::vector<size_t> msgSizes{ 62810, 92785, 101355, 102780, 62810, 57100, 68520, 51390,
                                 34260, 57100, 68520, 79940, 91360, 45680, 70660, 112059,
                                 102780, 45680, 79940, 74230, 91360, 78515, 58526, 45680,
                                 68520, 97070, 124911, 74940, 97070, 114200, 74230, 62810 };
-  std::vector<size_t> outSizes{ 76550, 76550, 76550, 76550, 76550, 76550, 76550, 76550,
+    std::vector<size_t> outSizes{ 76550, 76550, 76550, 76550, 76550, 76550, 76550, 76550,
                                 76550, 76550, 76550, 76550, 76550, 76550, 76550, 76550,
                                 76550, 76550, 76550, 76550, 76550, 76550, 76550, 76549,
                                 76549, 76549, 76549, 76549, 76549, 76549, 76549, 76549 };
 
-#ifdef USE_MXX
-    return mxx_test(argc, argv, msgSize, outSizes);
-#endif
-    return mva2av_test(argc, argv, msgSizes, outSizes);
+    MPI_Init(&argc, &argv);
+
+    MPI_Comm comm = MPI_COMM_WORLD;
+    MPI_Errhandler handler;
+    MPI_Errhandler_create(&myMPIErrorHandler, &handler);
+    MPI_Errhandler_set(comm, handler);
+
+    // Get the number of processes
+    int rank, size;
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    if (size == (int) msgSizes.size()) {
+        mva2av_test(argc, argv, comm, rank, size,
+                    msgSizes.at(rank), outSizes.at(rank));
+    } else {
+        std::cout << "Size should be 32 : 2 nodes with 16 process each"
+                  << std::endl;
+    }
+
+    return MPI_Finalize();
 }
 

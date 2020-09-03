@@ -1,0 +1,18 @@
+#!/bin/bash
+#PBS -N test_mvapich2
+#PBS -l nodes=2:ppn=16
+#PBS -l walltime=2:00:00
+#PBS -q swarm
+#PBS -j oe
+
+cd ~/data/mvapich_test/build1/
+
+echo mpiexec -f $PBS_NODEFILE -np $PBS_NP \
+	-map-by=core -bind-to=core -prepend-rank /usr/bin/time -v \
+	~/data/mvapich_test/build1/test_mvapich2_all2allv.x
+
+
+mpiexec -f $PBS_NODEFILE -np $PBS_NP \
+	-map-by=core -bind-to=core -prepend-rank /usr/bin/time -v \
+	~/data/mvapich_test/build1/test_mvapich2_all2allv.x
+
