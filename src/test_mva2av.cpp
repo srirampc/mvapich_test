@@ -3,6 +3,7 @@
 #include <vector>
 #include <limits>
 #include <cassert>
+#include <iostream>
 
 #ifdef USE_MXX
 #include "mxx/comm.hpp"
@@ -286,11 +287,16 @@ int mva2av_test(int argc, char** argv,
     // get displacements
     std::vector<int> send_displs = get_displacements(send_counts);
     std::vector<int> recv_displs = get_displacements(recv_counts);
-
+    if (rank == 0){
+       std::cout << "Start All2All" << std::endl;
+    }
     MPI_Datatype dt = get_mpi_datatype();
     MPI_Alltoallv(const_cast<TestType*>(&msg[0]), &send_counts[0], &send_displs[0], dt,
                   &out[0], &recv_counts[0], &recv_displs[0], dt, comm);
 
+    if (rank == 0){
+       std::cout << "Finish All2All" << std::endl;
+    }
     return MPI_Finalize();
 }
 int main(int argc, char** argv) {
