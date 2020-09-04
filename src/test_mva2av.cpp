@@ -240,10 +240,35 @@ int check_send_recv_tally(int rank, int size, const int* recv_counts){
         if(A2AV_ARGS[i*4][rank] != recv_counts[i])
             nfailed += 1;
     }
-    if(nfailed > 0) {
-        std::cerr << "F" << rank ;
-    }
     return nfailed;
+}
+
+int sanity_check_all2allv_args(int size, bool print_err){
+    int failed_counts = 0;
+    for(int rank = 0; rank < size; rank++){
+        int rank_idx = rank * 4;
+        const int* send_counts = A2AV_ARGS[rank_idx];
+        const int* send_displs = A2AV_ARGS[rank_idx + 1];
+        const int* recv_counts = A2AV_ARGS[rank_idx + 2];
+        const int* recv_displs = A2AV_ARGS[rank_idx + 3];
+        // Sanity Check
+        //   Send and Recv should tally
+        int nfailed = check_send_recv_tally(rank, size, recv_counts);
+        //   Check if Displacements are prefix summed
+        nfailed += check_displacements(send_counts, send_counts + size, 
+                                            send_displs);
+        nfailed += check_displacements(recv_counts, recv_counts + size, 
+                                            recv_displs);
+        if(print_err && nfailed > 0) {
+            std::cerr << nfailed << " sanity checks failed at rank : "
+                      << rank  << std::endl;
+        }
+        failed_counts += nfailed;
+    }
+    if(print_err && failed_counts > 0) {
+        std::cerr << "Total Failed : " << failed_counts << std::endl;
+    }
+    return failed_counts;
 }
 
 int mva2av_test2(int argc, char** argv,
@@ -256,22 +281,6 @@ int mva2av_test2(int argc, char** argv,
     const int* send_displs = A2AV_ARGS[rank_idx + 1];
     const int* recv_counts = A2AV_ARGS[rank_idx + 2];
     const int* recv_displs = A2AV_ARGS[rank_idx + 3];
-
-    // Sanity Check
-    //   Send and Recv should tally
-    int failed_counts = check_send_recv_tally(rank, size, recv_counts);
-    //   Check if Displacements are prefix summed
-    failed_counts += check_displacements(send_counts, send_counts + size, 
-                                         send_displs);
-    failed_counts += check_displacements(recv_counts, recv_counts + size, 
-                                         recv_displs);
-    int total_failed = 0;
-    MPI_Allreduce(&failed_counts, &total_failed, 1, MPI_INT, MPI_SUM, comm);
-    if (total_failed > 0){
-        std::cerr << std::endl;
-        std::cerr << "Total Failed : " << total_failed << std::endl;
-        return 0;
-    }
 
     if (rank == 0){
        std::cout << "Start All2All" << std::endl;
@@ -287,7 +296,6 @@ int mva2av_test2(int argc, char** argv,
 }
 
 int main(int argc, char** argv) {
-
     MPI_Init(&argc, &argv);
 
     // Get the number of processes
@@ -296,6 +304,10 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     if (size == (int) sizeof(MESSAGE_SIZES)) {
+        int total_failed = sanity_check_all2allv_args(size, rank == 0);
+        if (total_failed > 0){
+            return 0;
+        }
         mva2av_test2(argc, argv, MPI_COMM_WORLD, rank, size);
     } else {
         std::cout << "Size should be 32 : 2 nodes with 16 process each"
