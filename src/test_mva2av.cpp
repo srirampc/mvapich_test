@@ -302,12 +302,13 @@ int main(int argc, char** argv) {
     int rank, size;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    if (size == (int) sizeof(MESSAGE_SIZES)) {
+    if (size == (int) (sizeof(MESSAGE_SIZES) / sizeof(int))) {
         int total_failed = sanity_check_all2allv_args(size, rank == 0);
         if (total_failed > 0){
             return 0;
-        }
+        } else if (rank == 0){
+            std::cout << "Sanity Check Passed" << std::endl;
+	}
         mva2av_test2(argc, argv, MPI_COMM_WORLD, rank, size);
     } else {
         std::cout << "Size should be 32 : 2 nodes with 16 process each"
